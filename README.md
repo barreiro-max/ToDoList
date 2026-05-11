@@ -1,4 +1,4 @@
-# TODOList_OOP
+# ToDoList
 
 A modern TODO app built with SwiftUI using MVVM architecture and Repository Pattern.
 
