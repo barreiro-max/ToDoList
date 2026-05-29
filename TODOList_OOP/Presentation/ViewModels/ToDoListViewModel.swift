@@ -43,41 +43,52 @@ final class ToDoListViewModel {
     }
 
     func create(title: String, aboutTitle: String) {
-        runTask(.create) {
-            let task = TaskEntity(title: title, aboutTitle: aboutTitle)
-            self.entities.append(task)
-            try await self.repository.insert(task: task)
+        let task = TaskEntity(title: title, aboutTitle: aboutTitle)
+        let repository = self.repository
+
+        runTask(.create) { [weak self] in
+            if let self {
+                entities.append(task)
+            }
+
+            try await repository.insert(task: task)
         }
     }
 
     func read() {
-        runTask(.read) {
-            self.entities = try await self.repository.fetchAllTasks()
+        runTask(.read) { [weak self] in
+            guard let self else { return }
+            entities = try await repository.fetchAllTasks()
         }
     }
 
     func delete(task: TaskEntity) {
-        runTask(.delete) {
-            if let index = self.entities.firstIndex(
-                where: { $0.id == task.id }
-            ) {
-                self.entities.remove(at: index)
+        let repository = self.repository
+
+        runTask(.delete) { [weak self] in
+            if let self {
+                entities.removeAll { $0.id == task.id }
             }
-            try await self.repository.delete(task)
+
+            try await repository.delete(task)
         }
     }
 
     func filter(by isDone: Bool) {
-        runTask(.filter) {
-            if !self.entities.isEmpty {
-                self.entities = try await self.repository.filter(isDone: isDone)
+        runTask(.filter) { [weak self] in
+            guard let self else { return }
+
+            if !entities.isEmpty {
+                entities = try await repository.filter(isDone: isDone)
             }
         }
     }
     
     func save() {
+        let repository = self.repository
+
         runTask(.save) {
-            try await self.repository.save()
+            try await repository.save()
         }
     }
 
@@ -87,18 +98,28 @@ final class ToDoListViewModel {
     ) {
         tasks[type]?.cancel()
 
-        tasks[type] = Task {
+        tasks[type] = Task { [weak self] in
             do {
-                try Task.checkCancellation()
                 try await operation()
 
+                guard let self else { return }
                 state = .loaded
 
                 // swiftlint:disable line_length
                 Logger.viewModel.info("ViewModel Success runTask: state=\(self.state), taskType=\(type), count=\(self.entities.count)")
                 // swiftlint:enable line_length
             } catch {
-                handleError(by: error, for: type)
+                guard !Task.isCancelled else {
+                    Logger.viewModel.warning("Task cancelled: \(error.localizedDescription), taskType:\(type)")
+                    return
+                }
+
+                guard let self else { return }
+                state = .error(error.localizedDescription)
+
+                // swiftlint:disable line_length
+                Logger.viewModel.fault("ViewModel Error runTask: state=\(state), taskType=\(type), error=\(error.localizedDescription)")
+                // swiftlint:enable line_length
             }
         }
     }
@@ -108,21 +129,5 @@ final class ToDoListViewModel {
         for task in tasks.values {
             task.cancel()
         }
-    }
-}
-
-extension ToDoListViewModel {
-
-    fileprivate func handleError(by error: Error, for type: TaskType) {
-        guard !Task.isCancelled else {
-            Logger.viewModel.warning("Task cancelled: \(error.localizedDescription), taskType:\(type)")
-            return
-        }
-
-        // swiftlint:disable line_length
-        Logger.viewModel.fault("ViewModel Error runTask: state=\(self.state), taskType=\(type), error=\(error.localizedDescription)")
-        // swiftlint:enable line_length
-
-        state = .error(error.localizedDescription)
     }
 }
