@@ -8,7 +8,7 @@ final class AppContainer {
         return ToDoListViewModel(repository: repository)
     }
 
-    private var modelContainer: ModelContainer {
+    private lazy var modelContainer: ModelContainer = {
         let schema = Schema([TaskEntity.self])
 
         let config = ModelConfiguration(
@@ -24,5 +24,5 @@ final class AppContainer {
         } catch {
             fatalError("Failed to create ModelContainer")
         }
-    }
+    }()
 }
